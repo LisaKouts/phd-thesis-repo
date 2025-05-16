@@ -1,9 +1,12 @@
-from sklearn.model_selection import train_test_split
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from skfuzzy.cluster import cmeans
 from sklearn.model_selection import train_test_split
+from scipy.stats.contingency import association
+from itertools import product
+import skfuzzy
 
 def train_classifier_predict(df_num, metadata, seed, predict = False, test = False):
     '''
@@ -106,3 +109,77 @@ def CDD_difference(df, metadata, prot):
     unpriv_unfav = cdd_groups[(cdd_groups[metadata['target']] == metadata['neg_label']) & (cdd_groups[prot] == metadata['unpriv_group_'+prot])]['cdd'].values[0]
 
     return unpriv_fav - unpriv_unfav #, min(unpriv_fav/unpriv_unfav, unpriv_unfav/unpriv_fav)
+
+def discretize_fcmeans(df, var):
+    '''
+    Discretizes numeric variable using fuzzy c-means, Source: https://pythonhosted.org/scikit-fuzzy/auto_examples/plot_cmeans.html
+
+    Attributes
+    ----------
+    df: pandas dataframe with normalized numeric variables
+    var: sting, name of variable in dataframe to discretize
+
+    Returns
+    ----------
+    Vector with discretized new variable
+    '''
+    xpts = df[var].values.reshape(-1, 1) # select variable
+    xpts = np.vstack((xpts.flatten(), xpts.flatten())).astype(np.float64) # dulicate variable
+
+    fpc_best = 0
+    cntr_best = 0
+    for n_centers in range(2,10):
+        cntr, _, _, _, _, _, fpc = skfuzzy.cluster.cmeans(xpts, n_centers, 2, error=0.005, maxiter=1000, init=None, seed = 42) # https://scikit-fuzzy.github.io/scikit-fuzzy/api/index.html, https://scikit-fuzzy.github.io/scikit-fuzzy/auto_examples/plot_cmeans.html
+        if fpc_best < fpc:
+            fpc_best, cntr_best = fpc, cntr
+
+    diff = df[var].values.reshape((-1,1)) - cntr_best[:,0].reshape((1,-1)) 
+    distance = ((diff)**2)**0.5
+    return (np.argmin(distance, axis=1) + 1).astype('object')
+
+def cramers_V(df, features):
+    '''
+    Cramer's V association statistic based on p. 112, paragraph 3.33 of Agresti, Alan. Categorical data analysis. Vol. 792. John Wiley & Sons, 2012.
+
+    Attributes
+    ----------
+    df: pandas dataframe with nominal features
+    features: features to compute association on
+
+    Returns
+    ----------
+    square correlation matrix
+    '''
+    corr_matrix = pd.DataFrame(columns=features, index=features)
+
+    # populate square matrix with Cramer's V correlation coefficient
+    for x,y in list(product(features, features)):
+        ct = pd.crosstab(df[x], df[y]).values
+        cv = association(ct, method="cramer")
+        corr_matrix.loc[x,y] = cv
+        corr_matrix.loc[y,x] = cv
+    
+    return corr_matrix
+
+def onehot_aggregator(values, nominal_features, onehot_features, original_columns, metadata):
+    '''
+    nominal: boolean array, if True it is a nominal variable, if False it is a numeric variable
+    '''
+    
+    df = pd.DataFrame(data=values, columns=onehot_features)
+
+    # collect the dummy variables
+    for f_norm in nominal_features:
+        dummies = []
+        for f_dummy in onehot_features:
+            if f_norm in f_dummy:
+                dummies.append(f_dummy)
+        
+        # take the sum of dummy variables of a single feature, remove the dummies and add a new column with the sum
+        dummy_sum = df[dummies].sum(axis=1)
+        df = df.drop(dummies, axis=1)
+        df[f_norm] = dummy_sum
+    
+    # use the original order of variables
+    df = df[original_columns]
+    return df

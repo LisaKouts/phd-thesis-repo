@@ -4,6 +4,6 @@ The title of the PhD thesis is 'Quantifying and modeling explicit and implicit b
 
 The thesis text is available in [UHasselt's online library](https://documentserver.uhasselt.be/handle/1942/45992). 
 
-**Get in touch**
+**Get in touch**  
 email: liza.koutsoviti@gmail.com  
 LinkedIn: https://www.linkedin.com/in/lisakoutsovitikoumeri/
